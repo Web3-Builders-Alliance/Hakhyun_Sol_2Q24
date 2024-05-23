@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, accounts::signer, system_program::{transfer, Transfer}};
 
 declare_id!("FcfJuUFBm84BJfKR2tFwYygrxF9urpagjsGSYb15dDS4");
 
@@ -8,6 +8,10 @@ pub mod vault {
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
         ctx.accounts.initialize(&ctx.bumps)
+    }
+
+    pub fn deposit(ctx: Context<Payment>, amount: u64) -> Result<()> {
+        ctx.accounts.deposit(amount)
     }
 }
 
@@ -35,7 +39,21 @@ impl<'info> Initialize<'info> {
     pub fn initialize(&mut self, bumps: &InitializeBumps) -> Result<()> {
         self.vault_state.vault_bump = bumps.vault;
         self.vault_state.state_bump = bumps.vault_state;
+
+        Ok(())
     };
+}
+
+pub struct Payment<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"vault", vault_state.key().as_ref()],
+        bump = vault_state.state_bump,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -66,9 +84,13 @@ impl<'info> Deposit<'info> {
             from: self.user.to.to_account_info(),
             to: self.vault.to_account_info(),
         };
-        let cpi_ctx:  
+          let cpi_ctx = CpiContext::new(cpi_program, cpic_accounts);
 
-        tran  
+        transfer(cpi_ctx, amount)  
+    }
+
+    pub fn withdraw(&mut self, amount: u64) -> Result<()> {
+        
     }
 
 }
