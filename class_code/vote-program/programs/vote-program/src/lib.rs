@@ -77,13 +77,12 @@ impl<'info> Vote<'info> {
 }
 
 #[account]
-#[derive(InitSpace)]
+//#[derive(InitSpace)]
 pub struct VoteState {
     pub score: i64,
     pub bump: u8,
 }
-/*
-imple Space for VoteState {
-    const INIT_SPACE: usize = 8 + 8 + 1
+
+impl Space for VoteState {
+    const INIT_SPACE: usize = 8 + 8 + 1;
 }
-*/
