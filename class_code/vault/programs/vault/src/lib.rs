@@ -1,4 +1,4 @@
-use anchor_lang::{prelude::*, accounts::signer, system_program::{transfer, Transfer}};
+use anchor_lang::{prelude::*, system_program::{transfer, Transfer}};
 
 declare_id!("FcfJuUFBm84BJfKR2tFwYygrxF9urpagjsGSYb15dDS4");
 
@@ -7,22 +7,38 @@ pub mod vault {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        ctx.accounts.initialize(&ctx.bumps)
+        ctx.accounts.initialize(&ctx.bumps)?;
+
+        Ok(())
     }
 
-    pub fn deposit(ctx: Context<Payment>, amount: u64) -> Result<()> {
-        ctx.accounts.deposit(amount)
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        ctx.accounts.deposit(amount)?;
+
+        Ok(())
+    }
+
+    pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+        ctx.accounts.withdraw(amount)?;
+
+        Ok(())
+    }
+
+    pub fn close(ctx: Context<Close>) -> Result<()> {
+        ctx.accounts.close()?;
+
+        Ok(())
     }
 }
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(mut)]
-    pub user:Signer<'info>,
+    pub user: Signer<'info>,
     #[account(
         init,
         payer = user,
-        seeds = [b"state"], user.key().as_ref(),
+        seeds = [b"state", user.key().as_ref()], 
         bump,
         space = VaultState::INIT_SPACE,
     )]
@@ -31,7 +47,7 @@ pub struct Initialize<'info> {
         seeds = [b"vault", vault_state.key().as_ref()],
         bump,
     )]
-    vault: SystemAccount<'info>,
+    pub vault: SystemAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -41,19 +57,7 @@ impl<'info> Initialize<'info> {
         self.vault_state.state_bump = bumps.vault_state;
 
         Ok(())
-    };
-}
-
-pub struct Payment<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [b"vault", vault_state.key().as_ref()],
-        bump = vault_state.state_bump,
-    )]
-    pub vault_state: Account<'info, VaultState>,
-    pub system_program: Program<'info, System>,
+    }  
 }
 
 #[derive(Accounts)]
@@ -62,37 +66,123 @@ pub struct Deposit<'info> {
     pub user: Signer<'info>,
     #[account(
         mut,
-        seeds = [b"vault", vault_state.key().as_ref()],
-        bump - vault_state.vault_bump,
+        seeds = [b"vault", vault_state.key().as_ref()], 
+        // Our program will be able sign transactions on behalf of the vault account.
+        bump = vault_state.vault_bump,
     )]
-    pub vault: Account<'info, SYstemAccount>,
+    pub vault: SystemAccount<'info>,
     #[account(
         seeds = [b"state", user.key().as_ref()],
         bump = vault_state.state_bump,
     )]
-
-    pub vault_state: SystemAccount<'info, VaultState>,
+    pub vault_state: Account<'info, VaultState>,
     pub system_program: Program<'info, System>,
 }
 
 impl<'info> Deposit<'info> {
-    
-    pub fn depost(&mut self, amout: u64) -> Result<()> {
+    pub fn deposit(&mut self, amount: u64) -> Result<()> {
+
         let cpi_program = self.system_program.to_account_info();
 
         let cpi_accounts = Transfer {
-            from: self.user.to.to_account_info(),
+            from: self.user.to_account_info(),
             to: self.vault.to_account_info(),
         };
-          let cpi_ctx = CpiContext::new(cpi_program, cpic_accounts);
 
-        transfer(cpi_ctx, amount)  
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+
+        transfer(cpi_ctx, amount)?;
+
+        Ok(())
     }
+}
 
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"vault", vault_state.key().as_ref()],
+        bump = vault_state.vault_bump,
+    )]
+    pub vault: SystemAccount<'info>,
+    #[account(
+        seeds = [b"state", user.key().as_ref()],
+        bump = vault_state.state_bump,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> Withdraw<'info> {
     pub fn withdraw(&mut self, amount: u64) -> Result<()> {
-        
-    }
+        let cpi_program = self.system_program.to_account_info();
 
+        let cpi_accounts = Transfer {
+            from: self.vault.to_account_info(),
+            to: self.user.to_account_info(),
+        };
+
+        let seeds = &[
+            b"vault",
+            self.vault_state.to_account_info().key.as_ref(),
+            &[self.vault_state.vault_bump],
+        ];
+
+        let signer_seeds = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+
+        transfer(cpi_ctx, amount)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Close<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"vault", vault_state.key().as_ref()],
+        bump = vault_state.vault_bump,
+    )]
+    pub vault: SystemAccount<'info>,
+    #[account(
+        mut,
+        seeds = [b"state", user.key().as_ref()],
+        bump = vault_state.state_bump,
+        close = user,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> Close<'info> {
+    pub fn close(&mut self) -> Result<()> {
+        let cpi_program = self.system_program.to_account_info();
+
+        let cpi_accounts = Transfer {
+            from: self.vault.to_account_info(),
+            to: self.user.to_account_info(),
+        };
+
+        let seeds = &[
+            b"vault",
+            self.vault_state.to_account_info().key.as_ref(),
+            &[self.vault_state.vault_bump],
+        ];
+
+        let signer_seeds = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+
+        transfer(cpi_ctx, self.vault.lamports())?;
+
+        Ok(())
+    }
 }
 
 #[account]
@@ -101,6 +191,6 @@ pub struct VaultState {
     pub state_bump: u8,
 }
 
-impl Sapce for VaultState {
-    const INIT_SPACE: usize = 8+1+1;
+impl Space for VaultState {
+    const INIT_SPACE: usize = 8 + 1 + 1;
 }
