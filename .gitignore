@@ -5,3 +5,4 @@ target
 ts/yarn-error.log
 class_code/vote-program/.pnp.cjs
 class_code/vote-program/.pnp.loader.mjs
+.anchor
